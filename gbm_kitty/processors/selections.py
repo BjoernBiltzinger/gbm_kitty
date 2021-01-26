@@ -460,6 +460,22 @@ class BinnedLightCurve(object):
 
         return cls(np.array(counts), np.array(bins), tstart, tstop, dt, exposure=exposure)
 
+    @classmethod
+    def from_trigdat_reader(cls, trigdat_reader, chan_start=1, chan_stop=7, det_num=0):
+
+        tstart = trigdat_reader._tstart
+        tstop = trigdat_reader._tstop
+
+        rates = trigdat_reader._rates[:, det_num, chan_start:chan_stop]
+        time_bin_width = trigdat_reader._time_intervals.widths.reshape((len(trigdat_reader._time_intervals), 1))
+        bins = np.append(tstart, tstop[-1])
+        return cls(np.sum(rates *
+                          time_bin_width, axis=1),
+                   bins,
+                   tstart=tstart[0],
+                   tstop=tstop[-1],
+                   dt=1,
+                   exposure=tstop-tstart)
 
 def slice_disjoint(arr):
     """
