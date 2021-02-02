@@ -81,13 +81,12 @@ class AutoSelect(object):
                 update_logging_level("CRITICAL")
                 # selections
 
-                s1 = x < np.max([-i*.1, x.min() + 10])
+                s1 = x < np.max([-i*.1, x.min() + 1])
                 s2 = x > i
 
                 idx = s1 | s2
 
                 # fit background
-
                 _, ll = polyfit(x[idx], y[idx], grade=3,
                                 exposure=exposure[idx])
 
@@ -95,7 +94,6 @@ class AutoSelect(object):
 
             # continuosly increase the starting of the bkg
             # selections and store the log likelihood
-
             _log_likes = Parallel(n_jobs=8)(delayed(fit_backgrounds)(
                 i) for i in end_points)
 
@@ -107,21 +105,17 @@ class AutoSelect(object):
         # will flatten out once a good background is
         # found and then we can identify that via its
         # change points
-
         delta = []
         for ll in log_likes:
             delta.append(np.diff(ll))
-
         delta = np.vstack(delta).T
 
         delta = delta.reshape(delta.shape[0], -1)
 
         delta = (delta - np.min(delta, axis=0).reshape((1, -1)) + 1)
-
         angles = angle_mapping(delta)
 
         dist = distance_mapping(delta)
-
         penalty = 2 * np.log(len(angles))
         algo = rpt.Pelt().fit(angles)
         cpts_seg = algo.predict(pen=penalty)
@@ -144,12 +138,11 @@ class AutoSelect(object):
                 tol += 1e-2
 
         time = np.linspace(1, self._max_time, n_trials)[best_range+1]
-
         # now save all of this
         # and fit a polynomial to
         # each light curve and save it
 
-        pre = np.max([-time*.1, x.min() + 10])
+        pre = np.max([-time*.1, x.min() + 1])
         post = time
 
         # create polys
@@ -184,14 +177,14 @@ class AutoSelect(object):
             bkg_counts = np.empty(n)
             bkg_errs = np.empty(n)
 
-            for i, (a, b) in enumerate(zip(lc.time_bins[:-1], lc.time_bins[1:])):
+            for i, (a, b) in enumerate(zip(lc.time_bins[:,0], lc.time_bins[:,1])):
 
                 bkg_counts[i] = poly.integral(a, b)
                 bkg_errs[i] = poly.integral_error(a, b)
 
             clean_counts = lc.counts - bkg_counts
 
-            tmp.append(clean_counts)
+            tmp.append(clean_counts/lc.exposure)
 
         # look for the change points in the
         # in the cleaned light curves
@@ -203,7 +196,7 @@ class AutoSelect(object):
         penalty = 2 * np.log(len(angles))
         algo = rpt.Pelt().fit(angles)
         cpts_seg = algo.predict(pen=penalty)
-
+        self._tmp=tmp
         self._all_change_points = np.array(cpts_seg) - 1
 
     def _compute_significance(self):
@@ -228,7 +221,7 @@ class AutoSelect(object):
 
                 counts.append(lc.counts[a:b].sum())
 
-            for i, (a, b) in enumerate(zip(time_bins[:-1], time_bins[1:])):
+            for i, (a, b) in enumerate(zip(time_bins[:-1,0], time_bins[1:,1])):
 
                 bkg_counts[i] = poly.integral(a, b)
                 bkg_errs[i] = poly.integral_error(a, b)
@@ -329,10 +322,11 @@ def angle_mapping(x, ref_vector=None):
 class BinnedLightCurve(object):
     def __init__(self, counts, time_bins, tstart, tstop, dt, exposure=None):
 
-        assert len(counts) == len(time_bins) - 1
+        assert len(counts) == len(time_bins)
         assert dt > 0
 
         self._counts = counts
+        # time bins as (n_time_bins, 2) array with start and stop of all time bins
         self._time_bins = time_bins
         self._dt = dt
 
@@ -356,7 +350,7 @@ class BinnedLightCurve(object):
 
     @property
     def mean_times(self):
-        return 0.5 * (self._time_bins[:-1] + self._time_bins[1:])
+        return 0.5 * (self._time_bins[:,0] + self._time_bins[:,1])
 
     @property
     def time_bins(self):
@@ -438,8 +432,12 @@ class BinnedLightCurve(object):
 
             tstop = events.max()
 
-        bins = np.arange(tstart, tstop, dt)
-        bins = np.append(bins, [bins[-1] + dt])
+        bins_e = np.arange(tstart, tstop, dt)
+        bins_e = np.append(bins_e, [bins[-1] + dt])
+
+        bins = np.zeros((len(tstart),2))
+        bins[:,0] = bins_e[:-1]
+        bins[:,1] = bins_e[1:]
 
         dt2 = []
         counts = []
@@ -468,7 +466,9 @@ class BinnedLightCurve(object):
 
         rates = trigdat_reader._rates[:, det_num, chan_start:chan_stop]
         time_bin_width = trigdat_reader._time_intervals.widths.reshape((len(trigdat_reader._time_intervals), 1))
-        bins = np.append(tstart, tstop[-1])
+        bins = np.zeros((len(tstart),2))
+        bins[:,0] = tstart
+        bins[:,1] = tstop
         return cls(np.sum(rates *
                           time_bin_width, axis=1),
                    bins,
