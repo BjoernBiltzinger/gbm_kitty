@@ -12,7 +12,7 @@ import urllib.request as ur
 
 class AutoSelect(object):
 
-    def __init__(self, *light_curves, verbose=False, max_time=200.):
+    def __init__(self, *light_curves, verbose=False, max_time=None):
         """
 
 
@@ -23,7 +23,11 @@ class AutoSelect(object):
 
         self._verbose: bool = verbose
 
-        self._max_time: float = max_time
+        if max_time is None:
+            # get this automatic
+            self._max_time: float = np.min([self._light_curves[0].time_bins[-1,1]-5, 200.])
+        else:
+            self._max_time: float = max_time
 
     def process(self):
         """
@@ -148,7 +152,7 @@ class AutoSelect(object):
             # each light curve and save it
 
             pre = np.max([-time*.1, x.min() + 1])
-            post = time
+            post = time+2
 
         # create polys
         self._polys = []
