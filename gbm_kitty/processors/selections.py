@@ -8,7 +8,7 @@ from threeML.utils.statistics.stats_tools import Significance
 from threeML.utils.time_series.polynomial import polyfit
 from threeML import update_logging_level
 from gbm_kitty.utils.configuration import gbm_kitty_config
-
+import urllib.request as ur
 
 class AutoSelect(object):
 
@@ -124,26 +124,31 @@ class AutoSelect(object):
         # cpts_seg2 = algo.predict(pen=penalty)
 
         algo = rpt.Pelt().fit(dist/dist.max())
-        cpts_seg2 = algo.predict(pen=.01)
+        cpts_seg2 = algo.predict(pen=.1)
 
         tol = 1E-2
         best_range = len(dist)
+
         while (best_range >= len(dist)-1) and (tol < 1):
             for i in cpts_seg2:
                 best_range = i
-
                 if np.alltrue(np.abs(np.diff(dist/dist.max())[i:]) < tol):
 
                     break
-                tol += 1e-2
+            tol += 1e-2
 
-        time = np.linspace(1, self._max_time, n_trials)[best_range+1]
-        # now save all of this
-        # and fit a polynomial to
-        # each light curve and save it
+        if best_range==len(dist):
+            # No real change point was found. Assume a very short GRB.
+            pre = np.max([-5, x.min() + 2])
+            post = 5
+        else:
+            time = np.linspace(1, self._max_time, n_trials)[best_range+1]
+            # now save all of this
+            # and fit a polynomial to
+            # each light curve and save it
 
-        pre = np.max([-time*.1, x.min() + 1])
-        post = time
+            pre = np.max([-time*.1, x.min() + 1])
+            post = time
 
         # create polys
         self._polys = []
@@ -477,6 +482,38 @@ class BinnedLightCurve(object):
                    dt=1,
                    exposure=tstop-tstart)
 
+    @classmethod
+    def from_integral_spiacs_reader(cls,
+                                    integral_spiacs_file,
+                                    start_point = 0,
+                                    end_point = 500):
+
+        counts = np.array([])
+        bins = []
+
+        try:
+            file = ur.urlopen(integral_spiacs_file)
+            for line in file.readlines()[2:]:
+                line = line.decode("utf-8").split()
+                bins.append([float(line[0]), float(line[0]) + 0.05])
+                counts = np.append(counts, float(line[1]))
+        except:
+            file = open(integral_spiacs_file, "r")
+            for line in file.readlines()[2:]:
+                line = line.split()
+                bins.append([float(line[0]), float(line[0]) + 0.05])
+                counts = np.append(counts, float(line[1]))
+
+        bins = np.array(bins)
+
+        return cls(counts[start_point:end_point],
+                   bins[start_point:end_point],
+                   tstart = bins[start_point],
+                   tstop = bins[end_point],
+                   dt = 0.05,
+                   exposure = np.diff(bins[start_point:end_point],
+                                      axis=1).flatten())
+    
 def slice_disjoint(arr):
     """
     Returns an array of disjoint indices from a bool array
